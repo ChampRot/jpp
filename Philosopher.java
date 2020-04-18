@@ -1,36 +1,107 @@
 package io.dama.ffi.parcoord.dining.cond;
 
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
 
-public class PhilosopherExperiment {
-    static final int MAX_THINKING_DURATION_MS = 3000;
-    static final int MAX_EATING_DURATION_MS = 3000;
-    static final int MAX_TAKING_TIME_MS = 100;
-    static final int PHILOSOPHER_NUM = 5;
-    static final int EXP_DURATION_MS = 20000;
-    static IPhilosopher[] philosophers = new Philosopher[PHILOSOPHER_NUM];
+public class Philosopher extends Thread implements IPhilosopher {
 
-    public static void main(final String[] args) throws InterruptedException {
-        final var table = new ReentrantLock();
-        for (var i = 0; i < PHILOSOPHER_NUM; i++) {
-            philosophers[i] = new Philosopher();
-            philosophers[i].setTable(table);
-            philosophers[i].setSeat(i);
-        }
-        philosophers[0].setLeft(philosophers[PHILOSOPHER_NUM - 1]);
-        philosophers[0].setRight(philosophers[1]);
-        for (var i = 1; i < (PHILOSOPHER_NUM - 1); i++) {
-            philosophers[i].setLeft(philosophers[i - 1]);
-            philosophers[i].setRight(philosophers[i + 1]);
-        }
-        philosophers[PHILOSOPHER_NUM - 1].setLeft(philosophers[PHILOSOPHER_NUM - 2]);
-        philosophers[PHILOSOPHER_NUM - 1].setRight(philosophers[0]);
-        for (var i = 0; i < PHILOSOPHER_NUM; i++) {
-            philosophers[i].start();
-        }
-        Thread.sleep(EXP_DURATION_MS);
-        for (var i = 0; i < PHILOSOPHER_NUM; i++) {
-            philosophers[i].stopPhilosopher();
-        }
-    }
+	private Philosopher left;
+	private Philosopher right;
+	private Lock table;
+	private int seat;
+	private volatile boolean stopped = false;
+	private volatile boolean eating = false;
+	private Condition eatingCondition;
+
+	@Override
+	public void setLeft(final IPhilosopher left) {
+		this.left = (Philosopher) left;
+	}
+
+	@Override
+	public void setRight(final IPhilosopher right) {
+		this.right = (Philosopher) right;
+	}
+
+	@Override
+	public void setSeat(final int seat) {
+		this.seat = seat;
+	}
+
+	@Override
+	public void setTable(final Lock table) {
+		this.table = table;
+		this.eatingCondition = this.table.newCondition();
+	}
+
+	@Override
+	public void stopPhilosopher() {
+		this.stopped = true;
+		this.interrupt();
+	}
+
+	@Override
+	public void run() {
+		while (!this.isStopped()) {
+			try {
+				this.think();
+				this.table.lock();
+				while (this.left.isEating() || this.right.isEating()) {
+					this.left.eatingCondition.await(PhilosopherExperiment.MAX_TAKING_TIME_MS, TimeUnit.MILLISECONDS);
+					this.right.eatingCondition.await(PhilosopherExperiment.MAX_TAKING_TIME_MS, TimeUnit.MILLISECONDS);
+				}
+				this.table.unlock();
+				this.eat();
+				this.table.lock();
+				this.eatingCondition.signalAll();
+				this.table.unlock();
+			} catch (InterruptedException e) {
+				this.log("INTERRUPTED");
+			} 
+		}
+		this.log("stopped");
+	}
+
+	private void eat() throws InterruptedException {
+		this.eating = true;
+		this.log("started eating");
+		Thread.sleep(ThreadLocalRandom.current().nextInt(PhilosopherExperiment.MAX_EATING_DURATION_MS));
+		this.log("stopped eating");
+		this.eating = false;
+	}
+
+	private void think() throws InterruptedException {
+		this.log("thinking");
+		Thread.sleep(ThreadLocalRandom.current().nextInt(PhilosopherExperiment.MAX_THINKING_DURATION_MS));
+	}
+
+	private boolean isEating() {
+		return this.eating;
+	}
+
+	private boolean isStopped() {
+		return this.stopped;
+	}
+
+//	Zur Ausgabe einer "Tabelle"
+	private void log(final String message) {
+		synchronized (Philosopher.class) {
+			int i;
+			System.out.print("|");
+			for (i = 1; i <= this.seat; i++) {
+				System.out.print("                        |");
+			}
+			System.out.print(String.format("%1$25s", this.seat + " " + message + "|"));
+			for (; i < PhilosopherExperiment.PHILOSOPHER_NUM; i++) {
+				System.out.print("                        |");
+			}
+			System.out.println();
+			for (i = 0; i < PhilosopherExperiment.PHILOSOPHER_NUM; i++) {
+				System.out.print("+------------------------");
+			}
+			System.out.println("+");
+		}
+	}
 }
