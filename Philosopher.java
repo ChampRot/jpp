@@ -39,13 +39,14 @@ public class Philosopher extends Thread implements IPhilosopher {
 	@Override
 	public void stopPhilosopher() {
 		this.stopped = true;
+		this.eating = false;
 		this.interrupt();
 	}
 
 	@Override
 	public void run() {
-		while (!this.isStopped()) {
-			try {
+		try {
+			while (!this.isStopped()) {
 				this.think();
 				this.table.lock();
 				while (this.left.isEating() || this.right.isEating()) {
@@ -57,9 +58,12 @@ public class Philosopher extends Thread implements IPhilosopher {
 				this.table.lock();
 				this.eatingCondition.signalAll();
 				this.table.unlock();
-			} catch (InterruptedException e) {
-				this.log("INTERRUPTED");
-			} 
+			}
+		} catch (InterruptedException e) {
+			this.log("INTERRUPTED");
+		} finally {
+			if (this.table.tryLock())
+				this.table.unlock();
 		}
 		this.log("stopped");
 	}
