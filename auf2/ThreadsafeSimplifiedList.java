@@ -171,10 +171,7 @@ public class ThreadsafeSimplifiedList<T> implements SimplifiedList<T> {
 
 	@Override
 	public boolean isEmpty() {
-		var stamp = this.headLock.tryOptimisticRead();
-		if (this.headLock.validate(stamp)) {
-			return this.first == null;
-		}
+		var stamp = 0l;
 		try {
 			stamp = this.headLock.readLock();
 			return this.first == null;
